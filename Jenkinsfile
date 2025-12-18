@@ -19,16 +19,18 @@ pipeline {
             steps {
                 sh '''
                     echo "🚀 Deploying to bastion ${BASTION_IP}..."
-                    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "${SSH_KEY}" root@${BASTION_IP} "
-                        echo 'Cloning fresh repo...'
-                        cd ${ANSIBLE_DIR} &&
-                        rm -rf /root/mybookstore &&
-                        git clone https://github.com/mswalih189/mybookstore.git /root/mybookstore &&
-                        cd /root/mybookstore && git checkout master &&
-                        echo 'Running Ansible deployment...' &&
-                        cd ${ANSIBLE_DIR} &&
-                        ansible-playbook -i inventory.ini deploy.yml &&
-                        echo '✅ Deployment complete!'
+                    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "${SSH_KEY}" ec2-user@${BASTION_IP} "
+                        sudo su - root -c '
+                            echo \"Cloning fresh repo...\"
+                            cd ${ANSIBLE_DIR} &&
+                            rm -rf /root/mybookstore &&
+                            git clone https://github.com/mswalih189/mybookstore.git /root/mybookstore &&
+                            cd /root/mybookstore && git checkout master &&
+                            echo \"Running Ansible deployment...\"
+                            cd ${ANSIBLE_DIR} &&
+                            ansible-playbook -i inventory.ini deploy.yml &&
+                            echo \"✅ Deployment complete!\"
+                        '
                     "
                     echo '🎉 Bastion deployment successful!'
                 '''
@@ -38,12 +40,10 @@ pipeline {
         stage('Health Check') {
             steps {
                 script {
-                    echo '🔍 Checking ALB health...'
                     def response = sh(
                         script: "curl -s -o /dev/null -w '%{http_code}' http://${ALB_DNS}",
                         returnStdout: true
                     ).trim()
-                    echo "ALB Response: HTTP ${response}"
                     if (response != '200') {
                         error "❌ ALB Health Check FAILED: HTTP ${response}"
                     }
@@ -51,28 +51,14 @@ pipeline {
                 }
             }
         }
-        
-        stage('Final Verification') {
-            steps {
-                sh '''
-                    echo "🌐 Testing live site..."
-                    curl -s http://${ALB_DNS} | head -10
-                    echo "✅ Bookstore live at: http://${ALB_DNS}"
-                '''
-            }
-        }
     }
     
     post {
         success {
-            echo "🎉🎉 BOOKSTORE DEPLOYMENT SUCCESSFUL! 🎉🎉"
-            echo "Live URL: http://${ALB_DNS}"
+            echo "🎉🎉 BOOKSTORE DEPLOYMENT SUCCESSFUL!"
         }
         failure {
-            echo "❌ Deployment FAILED - check logs above"
-        }
-        always {
-            echo "Pipeline complete"
+            echo "❌ Deployment FAILED"
         }
     }
 }
